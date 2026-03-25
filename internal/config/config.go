@@ -11,15 +11,15 @@ import (
 )
 
 type Config struct {
-	Run      RunConfig               `yaml:"run"`
+	Health   HealthConfig            `yaml:"health"`
 	Sources  map[string]SourceConfig `yaml:"sources"`
 	Targets  map[string]TargetConfig `yaml:"targets"`
 	Bindings []BindingConfig         `yaml:"bindings"`
 }
 
-type RunConfig struct {
-	Once         bool   `yaml:"once"`
-	HealthListen string `yaml:"health_listen"`
+type HealthConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Listen  string `yaml:"listen"`
 }
 
 type SourceConfig struct {
@@ -73,8 +73,8 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) applyDefaults() {
-	if strings.TrimSpace(c.Run.HealthListen) == "" {
-		c.Run.HealthListen = ":8080"
+	if strings.TrimSpace(c.Health.Listen) == "" {
+		c.Health.Listen = ":8080"
 	}
 
 	for name, source := range c.Sources {

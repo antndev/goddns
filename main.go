@@ -16,7 +16,7 @@ func main() {
 	var configPath string
 	var once bool
 
-	flag.StringVar(&configPath, "config", "/config/config.yaml", "path to the YAML config file")
+	flag.StringVar(&configPath, "config", "/app/config.yaml", "path to the YAML config file")
 	flag.BoolVar(&once, "once", false, "run a single reconciliation cycle and exit")
 	flag.Parse()
 
@@ -37,7 +37,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	if once || cfg.Run.Once {
+	if once {
 		if err := runner.RunOnce(ctx); err != nil {
 			logger.Error("reconciliation failed", "error", err)
 			os.Exit(1)

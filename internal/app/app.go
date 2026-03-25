@@ -58,17 +58,20 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 }
 
 func (a *App) Run(ctx context.Context) error {
-	healthServer := a.newHealthServer()
-	go func() {
-		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			a.logger.Error("health server stopped", "error", err)
-		}
-	}()
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = healthServer.Shutdown(shutdownCtx)
-	}()
+	var healthServer *http.Server
+	if a.cfg.Health.Enabled {
+		healthServer = a.newHealthServer()
+		go func() {
+			if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				a.logger.Error("health server stopped", "error", err)
+			}
+		}()
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = healthServer.Shutdown(shutdownCtx)
+		}()
+	}
 
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -172,7 +175,7 @@ func (a *App) newHealthServer() *http.Server {
 	})
 
 	return &http.Server{
-		Addr:    a.cfg.Run.HealthListen,
+		Addr:    a.cfg.Health.Listen,
 		Handler: mux,
 	}
 }

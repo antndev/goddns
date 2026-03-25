@@ -22,6 +22,8 @@ Modular Go DDNS manager with file-based configuration, multiple named profiles, 
 
 Every source must define `check_interval`, for example `60s` or `300s`.
 
+Health is configured under `health`, with `enabled` and `listen`.
+
 Current built-in presets:
 
 - Sources: `opnsense`, `local`
@@ -30,10 +32,15 @@ Current built-in presets:
 Example:
 
 ```yaml
+health:
+  enabled: true
+  listen: ":8080"
+
 sources:
   wan-v4:
     type: opnsense
     family: ipv4
+    check_interval: 60s
     base_url: https://opnsense.example.internal
     api_key: replace-me
     api_secret: replace-me
@@ -46,6 +53,7 @@ targets:
     zone: example.com
     record_name: "@"
     record_type: A
+    ttl: 60
 
 bindings:
   - source: wan-v4
@@ -55,7 +63,7 @@ bindings:
 ## Run with Docker
 
 ```bash
-cp config.example.yaml config.yaml
+# create config.yaml from the example above
 docker compose up -d
 ```
 
@@ -76,11 +84,15 @@ By default no container ports are published, so the health endpoint is not expos
 - `404` for every other path
 - `405` for non-`GET` and non-`HEAD` requests to `/health`
 
+Set `health.enabled: false` to disable the HTTP health server entirely.
+
 ## Run once
 
 ```bash
 docker compose run --rm goddns -config /app/config.yaml -once
 ```
+
+`-once` is a CLI flag for a single reconciliation cycle. It is not part of the YAML config.
 
 ## Notes
 
