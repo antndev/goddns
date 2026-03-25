@@ -10,8 +10,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const defaultInterval = 5 * time.Minute
-
 type Config struct {
 	Run      RunConfig               `yaml:"run"`
 	Sources  map[string]SourceConfig `yaml:"sources"`
@@ -20,18 +18,16 @@ type Config struct {
 }
 
 type RunConfig struct {
-	Interval     time.Duration `yaml:"interval"`
-	Once         bool          `yaml:"once"`
-	HealthListen string        `yaml:"health_listen"`
+	Once         bool   `yaml:"once"`
+	HealthListen string `yaml:"health_listen"`
 }
 
 type SourceConfig struct {
 	Type               string        `yaml:"type"`
 	Family             string        `yaml:"family"`
-	Strategy           string        `yaml:"strategy"`
+	CheckInterval      time.Duration `yaml:"check_interval"`
 	Interface          string        `yaml:"interface"`
-	StaticIP           string        `yaml:"static_ip"`
-	ProbeAddress       string        `yaml:"probe_address"`
+	ExternalURLs       []string      `yaml:"external_urls"`
 	BaseURL            string        `yaml:"base_url"`
 	APIKey             string        `yaml:"api_key"`
 	APISecret          string        `yaml:"api_secret"`
@@ -77,9 +73,6 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) applyDefaults() {
-	if c.Run.Interval <= 0 {
-		c.Run.Interval = defaultInterval
-	}
 	if strings.TrimSpace(c.Run.HealthListen) == "" {
 		c.Run.HealthListen = ":8080"
 	}
@@ -87,7 +80,6 @@ func (c *Config) applyDefaults() {
 	for name, source := range c.Sources {
 		source.Type = strings.ToLower(strings.TrimSpace(source.Type))
 		source.Family = normalizeFamily(source.Family)
-		source.Strategy = strings.ToLower(strings.TrimSpace(source.Strategy))
 		if source.Timeout <= 0 {
 			source.Timeout = 10 * time.Second
 		}
@@ -132,6 +124,21 @@ func (c *Config) Validate() error {
 		}
 		if source.Family != "ipv4" && source.Family != "ipv6" {
 			errs = append(errs, fmt.Sprintf("source %q: family must be ipv4 or ipv6", name))
+		}
+		if source.CheckInterval <= 0 {
+			errs = append(errs, fmt.Sprintf("source %q: check_interval is required and must be > 0", name))
+		}
+		switch source.Type {
+		case "local":
+			if strings.TrimSpace(source.BaseURL) != "" || strings.TrimSpace(source.APIKey) != "" ||
+				strings.TrimSpace(source.APISecret) != "" || strings.TrimSpace(source.Endpoint) != "" ||
+				strings.TrimSpace(source.Interface) != "" {
+				errs = append(errs, fmt.Sprintf("source %q: local sources only support family, external_urls, and timeout", name))
+			}
+		case "opnsense":
+			if strings.TrimSpace(source.Interface) == "" {
+				errs = append(errs, fmt.Sprintf("source %q: interface is required for opnsense", name))
+			}
 		}
 	}
 

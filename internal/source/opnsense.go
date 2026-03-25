@@ -38,6 +38,9 @@ func NewOPNsense(_ string, cfg config.SourceConfig) (*OPNsenseSource, error) {
 	if endpoint == "" {
 		endpoint = "/api/diagnostics/interface/getInterfaceConfig"
 	}
+	if strings.Contains(endpoint, "%s") {
+		endpoint = fmt.Sprintf(endpoint, cfg.Interface)
+	}
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: cfg.InsecureSkipVerify}
@@ -48,7 +51,7 @@ func NewOPNsense(_ string, cfg config.SourceConfig) (*OPNsenseSource, error) {
 		baseURL:       strings.TrimRight(cfg.BaseURL, "/"),
 		apiKey:        cfg.APIKey,
 		apiSecret:     cfg.APISecret,
-		endpoint:      fmt.Sprintf(endpoint, cfg.Interface),
+		endpoint:      endpoint,
 		client: &http.Client{
 			Timeout:   cfg.Timeout,
 			Transport: transport,

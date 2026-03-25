@@ -14,12 +14,19 @@ import (
 )
 
 type App struct {
-	cfg      *config.Config
-	logger   *slog.Logger
-	sources  map[string]source.Resolver
-	targets  map[string]target.Updater
-	healthMu sync.RWMutex
-	healthy  bool
+	cfg         *config.Config
+	logger      *slog.Logger
+	sources     map[string]source.Resolver
+	targets     map[string]target.Updater
+	sourceState map[string]resolvedSource
+	healthMu    sync.RWMutex
+	healthy     bool
+}
+
+type resolvedSource struct {
+	ip           string
+	lastResolved time.Time
+	valid        bool
 }
 
 func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
@@ -42,10 +49,11 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 	}
 
 	return &App{
-		cfg:     cfg,
-		logger:  logger,
-		sources: sources,
-		targets: targets,
+		cfg:         cfg,
+		logger:      logger,
+		sources:     sources,
+		targets:     targets,
+		sourceState: make(map[string]resolvedSource, len(sources)),
 	}, nil
 }
 
@@ -62,7 +70,7 @@ func (a *App) Run(ctx context.Context) error {
 		_ = healthServer.Shutdown(shutdownCtx)
 	}()
 
-	ticker := time.NewTicker(a.cfg.Run.Interval)
+	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
 	if err := a.RunOnce(ctx); err != nil {
@@ -88,10 +96,16 @@ func (a *App) Run(ctx context.Context) error {
 }
 
 func (a *App) RunOnce(ctx context.Context) error {
-	resolved := make(map[string]string, len(a.sources))
+	now := time.Now()
+	resolvedThisCycle := make(map[string]string, len(a.sources))
 
 	for _, binding := range a.cfg.Bindings {
-		if _, ok := resolved[binding.Source]; ok {
+		if _, ok := resolvedThisCycle[binding.Source]; ok {
+			continue
+		}
+
+		state := a.sourceState[binding.Source]
+		if state.valid && now.Sub(state.lastResolved) < a.cfg.Sources[binding.Source].CheckInterval {
 			continue
 		}
 
@@ -100,20 +114,36 @@ func (a *App) RunOnce(ctx context.Context) error {
 			return fmt.Errorf("resolve source %q: %w", binding.Source, err)
 		}
 
-		resolved[binding.Source] = ip.String()
-		a.logger.Info("resolved source", "source", binding.Source, "ip", ip.String())
+		ipText := ip.String()
+		a.sourceState[binding.Source] = resolvedSource{
+			ip:           ipText,
+			lastResolved: now,
+			valid:        true,
+		}
+		resolvedThisCycle[binding.Source] = ipText
+		sourceCfg := a.cfg.Sources[binding.Source]
+		a.logger.Info("resolved source",
+			"source_name", binding.Source,
+			"source_type", sourceCfg.Type,
+			"ip", ip.String(),
+		)
 	}
 
 	for _, binding := range a.cfg.Bindings {
-		ip := resolved[binding.Source]
+		ip, ok := resolvedThisCycle[binding.Source]
+		if !ok {
+			continue
+		}
+
 		result, err := a.targets[binding.Target].Apply(ctx, ip)
 		if err != nil {
 			return fmt.Errorf("apply target %q: %w", binding.Target, err)
 		}
 
 		a.logger.Info("reconciled binding",
-			"source", binding.Source,
-			"target", binding.Target,
+			"source_name", binding.Source,
+			"source_type", a.cfg.Sources[binding.Source].Type,
+			"target_name", binding.Target,
 			"ip", ip,
 			"changed", result.Changed,
 			"message", result.Message,

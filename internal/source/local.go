@@ -3,170 +3,119 @@ package source
 import (
 	"context"
 	"fmt"
-	"net"
+	"io"
+	"net/http"
 	"net/netip"
 	"strings"
-	"time"
 
 	"goddns/internal/config"
 )
 
 type LocalSource struct {
-	name          string
-	family        string
-	strategy      string
-	interfaceName string
-	staticIP      string
-	probeAddress  string
-	timeout       time.Duration
+	family       string
+	externalURLs []string
+	client       *http.Client
 }
 
-func NewLocal(name string, cfg config.SourceConfig) (*LocalSource, error) {
-	strategy := cfg.Strategy
-	if strategy == "" {
-		strategy = "outbound"
-	}
-
-	probe := strings.TrimSpace(cfg.ProbeAddress)
-	if probe == "" {
-		if cfg.Family == "ipv6" {
-			probe = "[2606:4700:4700::1111]:53"
-		} else {
-			probe = "1.1.1.1:53"
+func NewLocal(_ string, cfg config.SourceConfig) (*LocalSource, error) {
+	externalURLs := make([]string, 0, len(cfg.ExternalURLs))
+	for _, rawURL := range cfg.ExternalURLs {
+		url := strings.TrimSpace(rawURL)
+		if url == "" {
+			continue
 		}
+		externalURLs = append(externalURLs, url)
+	}
+	if len(externalURLs) == 0 {
+		externalURLs = defaultExternalURLs(cfg.Family)
 	}
 
 	return &LocalSource{
-		name:          name,
-		family:        cfg.Family,
-		strategy:      strategy,
-		interfaceName: strings.TrimSpace(cfg.Interface),
-		staticIP:      strings.TrimSpace(cfg.StaticIP),
-		probeAddress:  probe,
-		timeout:       cfg.Timeout,
+		family:       cfg.Family,
+		externalURLs: externalURLs,
+		client: &http.Client{
+			Timeout: cfg.Timeout,
+		},
 	}, nil
 }
 
 func (s *LocalSource) Resolve(ctx context.Context) (netip.Addr, error) {
-	switch s.strategy {
-	case "static":
-		return s.resolveStatic()
-	case "interface":
-		return s.resolveInterface()
-	case "outbound":
-		return s.resolveOutbound(ctx)
-	default:
-		return netip.Addr{}, fmt.Errorf("unsupported local strategy %q", s.strategy)
-	}
-}
+	var errs []string
 
-func (s *LocalSource) resolveStatic() (netip.Addr, error) {
-	ip, err := netip.ParseAddr(s.staticIP)
-	if err != nil {
-		return netip.Addr{}, fmt.Errorf("parse static_ip: %w", err)
-	}
-	if err := validateFamily(ip, s.family); err != nil {
-		return netip.Addr{}, err
-	}
-	return ip, nil
-}
-
-func (s *LocalSource) resolveInterface() (netip.Addr, error) {
-	if s.interfaceName == "" {
-		return netip.Addr{}, fmt.Errorf("interface strategy requires interface")
-	}
-
-	iface, err := net.InterfaceByName(s.interfaceName)
-	if err != nil {
-		return netip.Addr{}, fmt.Errorf("load interface %q: %w", s.interfaceName, err)
-	}
-
-	addrs, err := iface.Addrs()
-	if err != nil {
-		return netip.Addr{}, fmt.Errorf("list interface addresses: %w", err)
-	}
-
-	for _, addr := range addrs {
-		ip, err := addrToNetIP(addr)
+	for _, rawURL := range s.externalURLs {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 		if err != nil {
+			errs = append(errs, fmt.Sprintf("%s: build request: %v", rawURL, err))
 			continue
 		}
-		if !matchesFamily(ip, s.family) {
+
+		req.Header.Set("Accept", "text/plain")
+		resp, err := s.client.Do(req)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("%s: request failed: %v", rawURL, err))
 			continue
 		}
-		if !ip.IsGlobalUnicast() {
+
+		ip, err := parseExternalIP(resp.Body, resp.StatusCode, s.family)
+		resp.Body.Close()
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", rawURL, err))
 			continue
 		}
+
 		return ip, nil
 	}
 
-	return netip.Addr{}, fmt.Errorf("no %s address found on interface %q", s.family, s.interfaceName)
-}
-
-func (s *LocalSource) resolveOutbound(ctx context.Context) (netip.Addr, error) {
-	network := "udp4"
-	if s.family == "ipv6" {
-		network = "udp6"
+	if len(errs) == 0 {
+		return netip.Addr{}, fmt.Errorf("no external urls configured")
 	}
 
-	dialCtx, cancel := context.WithTimeout(ctx, s.timeout)
-	defer cancel()
+	return netip.Addr{}, fmt.Errorf("resolve external ip failed: %s", strings.Join(errs, "; "))
+}
 
-	conn, err := (&net.Dialer{}).DialContext(dialCtx, network, s.probeAddress)
+func parseExternalIP(body io.Reader, statusCode int, family string) (netip.Addr, error) {
+	raw, err := io.ReadAll(io.LimitReader(body, 256))
 	if err != nil {
-		return netip.Addr{}, fmt.Errorf("dial probe %q: %w", s.probeAddress, err)
+		return netip.Addr{}, fmt.Errorf("read response: %w", err)
 	}
-	defer conn.Close()
-
-	addr, ok := conn.LocalAddr().(*net.UDPAddr)
-	if !ok {
-		return netip.Addr{}, fmt.Errorf("unexpected local address type %T", conn.LocalAddr())
+	if statusCode < 200 || statusCode >= 300 {
+		return netip.Addr{}, fmt.Errorf("unexpected status %d: %s", statusCode, strings.TrimSpace(string(raw)))
 	}
 
-	ip, ok := netip.AddrFromSlice(addr.IP)
-	if !ok {
-		return netip.Addr{}, fmt.Errorf("failed to parse local address")
+	text := strings.TrimSpace(string(raw))
+	if text == "" {
+		return netip.Addr{}, fmt.Errorf("empty response body")
 	}
 
-	if err := validateFamily(ip, s.family); err != nil {
-		return netip.Addr{}, err
+	ipText := strings.Fields(text)[0]
+	ip, err := netip.ParseAddr(ipText)
+	if err != nil {
+		return netip.Addr{}, fmt.Errorf("parse ip %q: %w", ipText, err)
 	}
 
-	return ip.Unmap(), nil
-}
-
-func addrToNetIP(addr net.Addr) (netip.Addr, error) {
-	switch value := addr.(type) {
-	case *net.IPNet:
-		ip, ok := netip.AddrFromSlice(value.IP)
-		if !ok {
-			return netip.Addr{}, fmt.Errorf("invalid ipnet address")
-		}
-		return ip.Unmap(), nil
-	case *net.IPAddr:
-		ip, ok := netip.AddrFromSlice(value.IP)
-		if !ok {
-			return netip.Addr{}, fmt.Errorf("invalid ipaddr address")
-		}
-		return ip.Unmap(), nil
-	default:
-		return netip.Addr{}, fmt.Errorf("unsupported address type %T", addr)
-	}
-}
-
-func matchesFamily(ip netip.Addr, family string) bool {
-	if family == "ipv6" {
-		return ip.Is6()
-	}
-	return ip.Is4()
-}
-
-func validateFamily(ip netip.Addr, family string) error {
+	ip = ip.Unmap()
 	if family == "ipv6" && !ip.Is6() {
-		return fmt.Errorf("expected ipv6 address, got %s", ip)
+		return netip.Addr{}, fmt.Errorf("expected ipv6 address, got %s", ip)
 	}
 	if family == "ipv4" && !ip.Is4() {
-		return fmt.Errorf("expected ipv4 address, got %s", ip)
+		return netip.Addr{}, fmt.Errorf("expected ipv4 address, got %s", ip)
 	}
-	return nil
+
+	return ip, nil
+}
+
+func defaultExternalURLs(family string) []string {
+	if family == "ipv6" {
+		return []string{
+			"https://ifconfig.me/ip",
+			"https://api64.ipify.org",
+			"https://ipv6.icanhazip.com",
+		}
+	}
+
+	return []string{
+		"https://ifconfig.me/ip",
+		"https://api.ipify.org",
+		"https://ipv4.icanhazip.com",
+	}
 }

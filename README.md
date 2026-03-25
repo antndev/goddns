@@ -7,10 +7,10 @@ Small Go DDNS manager with file-based configuration, Docker packaging, and plugg
 - Multiple named sources for IPv4 and IPv6
 - Multiple named targets
 - Bindings that connect any source to any target
-- Local IP discovery with `outbound`, `interface`, or `static` strategies
+- Local IP discovery via external IP endpoints with fallback URLs
 - OPNsense source via HTTPS API
 - Hetzner DNS target via RRset `set_records`
-- Single-run mode and polling mode
+- Single-run mode and per-source polling intervals
 - Minimal health endpoint for monitoring
 
 ## Config model
@@ -18,6 +18,8 @@ Small Go DDNS manager with file-based configuration, Docker packaging, and plugg
 1. Define `sources`.
 2. Define `targets`.
 3. Create `bindings` that connect them.
+
+Every source must define `check_interval`, for example `60s` or `300s`.
 
 Example:
 
@@ -51,7 +53,11 @@ cp config.example.yaml config.yaml
 docker compose up -d --build
 ```
 
-The container reads `/config/config.yaml`, so mounting a single config file is enough.
+The compose file mounts the config at `/app/config.yaml` and uses `network_mode: host`.
+
+Local sources query external IP endpoints and fall back across multiple URLs if one is down.
+
+Each source is rechecked on its own `check_interval`, so one profile can run every `60s` while another runs every `300s`.
 
 ## Health
 
@@ -65,7 +71,7 @@ The container reads `/config/config.yaml`, so mounting a single config file is e
 ## Run once
 
 ```bash
-docker compose run --rm goddns -config /config/config.yaml -once
+docker compose run --rm goddns -config /app/config.yaml -once
 ```
 
 ## Notes
@@ -73,3 +79,5 @@ docker compose run --rm goddns -config /config/config.yaml -once
 - The default OPNsense endpoint is `/api/diagnostics/interface/getInterfaceConfig`, matching the Python app you shared.
 - The Hetzner target uses `POST /zones/{zone}/rrsets/{record}/{type}/actions/set_records` on `https://api.hetzner.cloud/v1`.
 - The manager keeps the HTTP surface intentionally tiny: health only.
+- Local sources accept `external_urls` and try them in order until one returns a valid IP.
+- Source `check_interval` is required and controls how often that specific source is re-resolved.
