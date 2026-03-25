@@ -56,14 +56,16 @@ bindings:
 
 ```bash
 cp config.example.yaml config.yaml
-docker compose up -d --build
+docker compose up -d
 ```
 
-The compose file mounts the config at `/app/config.yaml` and uses `network_mode: host`.
+The compose file mounts the config at `/app/config.yaml`.
 
 Local sources query external IP endpoints and fall back across multiple URLs if one is down.
 
 Each source is rechecked on its own `check_interval`, so one profile can run every `60s` while another runs every `300s`.
+
+By default no container ports are published, so the health endpoint is not exposed outside the container unless you explicitly add a port mapping.
 
 ## Health
 
