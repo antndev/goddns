@@ -72,7 +72,9 @@ func (s *OPNsenseSource) Resolve(ctx context.Context) (netip.Addr, error) {
 	if err != nil {
 		return netip.Addr{}, fmt.Errorf("request opnsense: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

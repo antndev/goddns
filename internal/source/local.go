@@ -57,7 +57,7 @@ func (s *LocalSource) Resolve(ctx context.Context) (netip.Addr, error) {
 		}
 
 		ip, err := parseExternalIP(resp.Body, resp.StatusCode, s.family)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", rawURL, err))
 			continue

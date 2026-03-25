@@ -22,7 +22,7 @@ Modular Go DDNS manager with file-based configuration, multiple named profiles, 
 
 Every source must define `check_interval`, for example `60s` or `300s`.
 
-Health is configured under `health`, with `enabled` and `listen`.
+Health is configured under `health.enabled`. When enabled, the service listens on `/health` at container port `8080`.
 
 Current built-in presets:
 
@@ -34,7 +34,6 @@ Example:
 ```yaml
 health:
   enabled: true
-  listen: ":8080"
 
 sources:
   wan-v4:

@@ -18,8 +18,7 @@ type Config struct {
 }
 
 type HealthConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	Listen  string `yaml:"listen"`
+	Enabled bool `yaml:"enabled"`
 }
 
 type SourceConfig struct {
@@ -73,10 +72,6 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) applyDefaults() {
-	if strings.TrimSpace(c.Health.Listen) == "" {
-		c.Health.Listen = ":8080"
-	}
-
 	for name, source := range c.Sources {
 		source.Type = strings.ToLower(strings.TrimSpace(source.Type))
 		source.Family = normalizeFamily(source.Family)

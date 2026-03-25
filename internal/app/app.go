@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -13,6 +14,8 @@ import (
 	"goddns/internal/source"
 	"goddns/internal/target"
 )
+
+const healthListenAddr = ":8080"
 
 type App struct {
 	cfg         *config.Config
@@ -62,13 +65,13 @@ func (a *App) Run(ctx context.Context) error {
 	var healthServer *http.Server
 	if a.cfg.Health.Enabled {
 		healthServer = a.newHealthServer()
-		listener, err := net.Listen("tcp", a.cfg.Health.Listen)
+		listener, err := net.Listen("tcp", healthListenAddr)
 		if err != nil {
-			return fmt.Errorf("start health server on %q: %w", a.cfg.Health.Listen, err)
+			return fmt.Errorf("start health server on %q: %w", healthListenAddr, err)
 		}
 
 		go func() {
-			if err := healthServer.Serve(listener); err != nil && err != http.ErrServerClosed {
+			if err := healthServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				a.logger.Error("health server stopped", "error", err)
 			}
 		}()
@@ -181,7 +184,7 @@ func (a *App) newHealthServer() *http.Server {
 	})
 
 	return &http.Server{
-		Addr:    a.cfg.Health.Listen,
+		Addr:    healthListenAddr,
 		Handler: mux,
 	}
 }

@@ -132,7 +132,9 @@ func (t *HetznerTarget) doJSON(ctx context.Context, method, path string, body an
 	if err != nil {
 		return fmt.Errorf("request hetzner: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
