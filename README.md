@@ -11,7 +11,7 @@ Modular Go DDNS manager with file-based configuration, multiple named profiles, 
 - Local IP discovery via external IP endpoints with fallback URLs
 - OPNsense source via HTTPS API
 - Hetzner DNS target via RRset `set_records`
-- Single-run mode and per-source polling intervals
+- Per-source polling intervals
 - Minimal health endpoint for monitoring
 
 ## Config model
@@ -85,14 +85,6 @@ By default no container ports are published, so the health endpoint is not expos
 - `405` for non-`GET` and non-`HEAD` requests to `/health`
 
 Set `health.enabled: false` to disable the HTTP health server entirely.
-
-## Run once
-
-```bash
-docker compose run --rm goddns -config /app/config.yaml -once
-```
-
-`-once` is a CLI flag for a single reconciliation cycle. It is not part of the YAML config.
 
 ## Notes
 

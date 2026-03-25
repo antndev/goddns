@@ -14,10 +14,8 @@ import (
 
 func main() {
 	var configPath string
-	var once bool
 
 	flag.StringVar(&configPath, "config", "/app/config.yaml", "path to the YAML config file")
-	flag.BoolVar(&once, "once", false, "run a single reconciliation cycle and exit")
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{}))
@@ -36,14 +34,6 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-
-	if once {
-		if err := runner.RunOnce(ctx); err != nil {
-			logger.Error("reconciliation failed", "error", err)
-			os.Exit(1)
-		}
-		return
-	}
 
 	if err := runner.Run(ctx); err != nil {
 		logger.Error("manager stopped with error", "error", err)
