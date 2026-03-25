@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -61,8 +62,13 @@ func (a *App) Run(ctx context.Context) error {
 	var healthServer *http.Server
 	if a.cfg.Health.Enabled {
 		healthServer = a.newHealthServer()
+		listener, err := net.Listen("tcp", a.cfg.Health.Listen)
+		if err != nil {
+			return fmt.Errorf("start health server on %q: %w", a.cfg.Health.Listen, err)
+		}
+
 		go func() {
-			if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			if err := healthServer.Serve(listener); err != nil && err != http.ErrServerClosed {
 				a.logger.Error("health server stopped", "error", err)
 			}
 		}()
