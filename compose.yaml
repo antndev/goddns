@@ -1,6 +1,6 @@
 services:
   goddns:
-    image: ghcr.io/anton/goddns:latest
+    image: ghcr.io/<owner>/<repo>:latest
     container_name: goddns
     restart: unless-stopped
     read_only: true

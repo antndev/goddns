@@ -63,6 +63,7 @@ bindings:
 
 ```bash
 # create config.yaml from the example above
+# set the image in compose.yaml to your published GHCR path, for example ghcr.io/<owner>/<repo>:latest
 docker compose up -d
 ```
 
