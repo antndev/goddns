@@ -1,0 +1,15 @@
+services:
+  goddns:
+    build:
+      context: .
+    image: goddns:local
+    container_name: goddns
+    restart: unless-stopped
+    read_only: true
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/config/config.yaml:ro
+    command:
+      - -config
+      - /config/config.yaml
