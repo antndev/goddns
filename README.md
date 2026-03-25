@@ -1,12 +1,13 @@
 # goddns
 
-Small Go DDNS manager with file-based configuration, Docker packaging, and pluggable IP sources and DNS targets.
+Modular Go DDNS manager with file-based configuration, multiple named profiles, and pluggable source and target backends.
 
 ## Features
 
 - Multiple named sources for IPv4 and IPv6
 - Multiple named targets
 - Bindings that connect any source to any target
+- Modular source/target design with reusable named profiles
 - Local IP discovery via external IP endpoints with fallback URLs
 - OPNsense source via HTTPS API
 - Hetzner DNS target via RRset `set_records`
@@ -20,6 +21,11 @@ Small Go DDNS manager with file-based configuration, Docker packaging, and plugg
 3. Create `bindings` that connect them.
 
 Every source must define `check_interval`, for example `60s` or `300s`.
+
+Current built-in presets:
+
+- Sources: `opnsense`, `local`
+- Targets: `hetzner`
 
 Example:
 
